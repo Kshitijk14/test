@@ -1,3 +1,5 @@
+print("rag.py")
+
 import os
 from pathlib import Path
 import chromadb
@@ -8,11 +10,13 @@ from llama_index.core import (
     Settings,
     StorageContext,
 )
+
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.node_parser import SentenceSplitter
+from llama_index.core.postprocessor import SentenceTransformerRerank
 
 from utils.config import CONFIG
-from utils.rag.get_models import get_embedding_model, get_llm_model
+from utils.rag.get_models import get_embedding_model, get_llm_model, get_llm_model_hf
 from utils.rag.populate import get_chunk_id
 from utils.rag.get_prompt import RESPONSE_SYNTHESIS_PROMPT
 
@@ -35,16 +39,19 @@ CHUNK_SIZE = CONFIG["CHUNK_SIZE"]
 CHUNK_OVERLAP = CONFIG["CHUNK_OVERLAP"]
 TOP_K = CONFIG["TOP_K"]
 
+# Re-ranker configuration
+RERANKER_MODEL = CONFIG["RERANKER_MODEL"]
+RERANKER_TOP_N = CONFIG["RERANKER_TOP_N"]
+
 QUERY = CONFIG["QUERY"]
 
 # # tracing
-# endpoint = "http://localhost:6006/v1/traces"
 # tracer_provider = trace_sdk.TracerProvider()
 # tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(endpoint)))
 # LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
 
 
-def build_rag():
+def build_rag(question: str, llm=None):
     # 1. Load PDF/DOC/TXT documents
     os.makedirs(DATA_DIR, exist_ok=True)
     docs = SimpleDirectoryReader(DATA_DIR).load_data()
@@ -63,7 +70,9 @@ def build_rag():
 
     # 3. Setup embedding + LLM
     embed_model = get_embedding_model(embedding_model=EMBEDDING_MODEL)
-    llm = get_llm_model(llm_model=LLM_MODEL)
+    # Allow injection (e.g., Ollama) while keeping default HF path
+    if llm is None:
+        llm = get_llm_model(llm_model=LLM_MODEL)
 
     # 4. Setup persistent Chroma client
     os.makedirs(CHROMA_DIR, exist_ok=True)
@@ -96,14 +105,23 @@ def build_rag():
     # 8. Define a custom prompt
     qa_template = RESPONSE_SYNTHESIS_PROMPT
 
-    # 9. Create query engine with prompt
+    # 9. Create re-ranker for better chunk relevance
+    # Using a cross-encoder model to re-rank retrieved chunks based on query similarity
+    reranker = SentenceTransformerRerank(
+        model=RERANKER_MODEL,
+        top_n=RERANKER_TOP_N,  # Keep top N most relevant chunks after re-ranking
+    )
+
+    # 10. Create query engine with re-ranker
     query_engine = index.as_query_engine(
         text_qa_template=qa_template,
         similarity_top_k=TOP_K,
+        node_postprocessors=[reranker],  # Add re-ranker to the pipeline
     )
 
-    # 10. Run a query
-    response = query_engine.query(QUERY)
+    # 11. Run a query
+    q = question if question is not None else QUERY
+    response = query_engine.query(q)
     
     
     print("\n=== RETRIEVED CHUNKS ===\n")
@@ -117,8 +135,7 @@ def build_rag():
         print("-" * 60)
     
     print("\n=== RESPONSE ===\n")
-    print(response)
-
+    return response
 
 if __name__ == "__main__":
-    build_rag()
+    build_rag(question=None)

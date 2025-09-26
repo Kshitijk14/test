@@ -3,12 +3,16 @@ CHROMA_DIR: "artifacts/chroma"
 CHROMA_COLLECTION: "pdfs"
 
 EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL: "gemma3:270m"
+LLM_MODEL: "gemma2-9b-it" 
 TEMPERATURE: 0.1
 TIMEOUT: 200
 
-CHUNK_SIZE: 512
-CHUNK_OVERLAP: 50
+CHUNK_SIZE: 1024
+CHUNK_OVERLAP: 100
 TOP_K: 5
 
-QUERY: "How is attention different from CNN or RNN?"
+# Re-ranker configuration
+RERANKER_MODEL: "cross-encoder/ms-marco-TinyBERT-L-2-v2"
+RERANKER_TOP_N: 3
+
+QUERY: "Explain the concept of attention mechanism in neural networks."
