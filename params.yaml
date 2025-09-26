@@ -3,7 +3,7 @@ CHROMA_DIR: "artifacts/chroma"
 CHROMA_COLLECTION: "pdfs"
 
 EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL: "gemma3:270m"
+LLM_MODEL: "gpt-3.5-turbo"
 TEMPERATURE: 0.1
 TIMEOUT: 200
 
