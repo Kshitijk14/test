@@ -7,6 +7,7 @@ from llama_index.core import (
     VectorStoreIndex,
     Settings,
     StorageContext,
+    PromptTemplate
 )
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.node_parser import SentenceSplitter
@@ -15,6 +16,7 @@ from utils.config import CONFIG
 from utils.rag.get_models import get_embedding_model, get_llm_model
 from utils.rag.populate import get_chunk_id
 from utils.rag.get_prompt import RESPONSE_SYNTHESIS_PROMPT
+from tests.ranking import rerank_chunks
 
 # import phoenix as px
 # from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
@@ -42,7 +44,6 @@ QUERY = CONFIG["QUERY"]
 # tracer_provider = trace_sdk.TracerProvider()
 # tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(endpoint)))
 # LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
-
 
 def build_rag():
     # 1. Load PDF/DOC/TXT documents
@@ -104,20 +105,25 @@ def build_rag():
 
     # 10. Run a query
     response = query_engine.query(QUERY)
-    
-    
-    print("\n=== RETRIEVED CHUNKS ===\n")
-    for i, node in enumerate(response.source_nodes, 1):
-        file_name = node.node.metadata.get("file_name", "unknown_file")
-        chunk_id = node.node.node_id
-        
-        print(f"Chunk {i} | ID: {chunk_id} | File: {file_name}")
-        
-        # print(node.node.get_content())
+
+    retrieved_chunks = [
+        {"text": node.node.get_content(), "metadata": node.node.metadata}
+        for node in response.source_nodes
+    ]
+
+    reranked_chunks = rerank_chunks(QUERY, retrieved_chunks, llm)
+
+    top_chunks = reranked_chunks[:TOP_K]
+
+    print("\n=== RE-RANKED CHUNKS ===\n")
+    for i, chunk in enumerate(top_chunks, 1):
+        print(f"Ranked Chunk {i}: {chunk['text']}")
         print("-" * 60)
-    
-    print("\n=== RESPONSE ===\n")
-    print(response)
+
+    # Final response based on the re-ranked chunks
+    final_response = query_engine.query_with_chunks(QUERY, top_chunks)
+    print("\n=== FINAL RESPONSE ===\n")
+    print(final_response)
 
 
 if __name__ == "__main__":
