@@ -2,8 +2,12 @@ DATA_DIR: "artifacts/data"
 CHROMA_DIR: "artifacts/chroma"
 CHROMA_COLLECTION: "pdfs"
 
-EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
-LLM_MODEL: "gemma3:270m"
+LOCAL_EMBEDDING_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+LOCAL_LLM_MODEL: "gemma3:270m"
+
+REMOTE_EMBEDDING_MODEL: "text-embedding-3-small"
+REMOTE_LLM_MODEL: "gpt-4o-mini"
+
 TEMPERATURE: 0.1
 TIMEOUT: 200
 
