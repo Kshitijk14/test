@@ -15,13 +15,14 @@ from utils.config import CONFIG
 from utils.rag.get_local_models import get_embedding_model
 from utils.rag.get_remote_models import get_llm_model
 from utils.rag.populate import get_chunk_id
+from utils.rag.rerank import rerank_chunks
 from utils.rag.get_prompt import RESPONSE_SYNTHESIS_PROMPT
 
-import phoenix as px
-from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk import trace as trace_sdk
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+# import phoenix as px
+# from openinference.instrumentation.llama_index import LlamaIndexInstrumentor
+# from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+# from opentelemetry.sdk import trace as trace_sdk
+# from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
 
 # configs
@@ -38,14 +39,18 @@ REMOTE_LLM_MODEL = CONFIG["REMOTE_LLM_MODEL"]
 CHUNK_SIZE = CONFIG["CHUNK_SIZE"]
 CHUNK_OVERLAP = CONFIG["CHUNK_OVERLAP"]
 TOP_K = CONFIG["TOP_K"]
+TOP_N = CONFIG["TOP_N"]
 
 QUERY = CONFIG["QUERY"]
 
-# tracing
-endpoint = "http://localhost:6006/v1/traces"
-tracer_provider = trace_sdk.TracerProvider()
-tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(endpoint)))
-LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
+# # tracing
+# endpoint = "http://localhost:6006/v1/traces"
+# tracer_provider = trace_sdk.TracerProvider()
+# tracer_provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter(endpoint)))
+# LlamaIndexInstrumentor().instrument(tracer_provider=tracer_provider)
+
+
+
 
 
 def build_rag():
@@ -106,11 +111,22 @@ def build_rag():
         similarity_top_k=TOP_K,
     )
 
-    # 10. Run a query
+    # 10. Retrieve top_k chunks
+    retriever = index.as_retriever(similarity_top_k=TOP_K)
+    retrieved_nodes = retriever.retrieve(QUERY)
+    
+    # 11. Re-rank chunks using cross-encoder
+    chunk_texts = [node.get_content() for node in retrieved_nodes]
+    reranked_chunks_with_scores = rerank_chunks(chunk_texts, [QUERY])
+    
+    # 12. Keep only top_n re-ranked results
+    top_n_chunks_with_scores = reranked_chunks_with_scores[:TOP_N]
+    
+    # 13. Generate final response using top_n re-ranked chunks
     response = query_engine.query(QUERY)
     
     
-    print("\n=== RETRIEVED CHUNKS ===\n")
+    print("\n=== RETRIEVED CHUNKS (TOP_K=5) ===\n")
     for i, node in enumerate(response.source_nodes, 1):
         file_name = node.node.metadata.get("file_name", "unknown_file")
         chunk_id = node.node.node_id
@@ -120,7 +136,18 @@ def build_rag():
         # print(node.node.get_content())
         print("-" * 60)
     
-    print("\n=== RESPONSE ===\n")
+    print(f"\n=== TOP_N RE-RANKED CHUNKS (TOP_N={TOP_N}) ===\n")
+    for i, (chunk, score) in enumerate(top_n_chunks_with_scores, 1):
+        # Find the corresponding node to get chunk_id and file_name
+        for node in retrieved_nodes:
+            if node.get_content() == chunk:
+                chunk_id = node.node_id
+                file_name = node.metadata.get("file_name", "unknown_file")
+                print(f"Chunk {i} | ID: {chunk_id} | File: {file_name} | Score: {score:.4f}")
+                break
+        print("-" * 60)
+    
+    print("\n=== RESPONSE (using top_n re-ranked chunks) ===\n")
     print(response)
 
 
